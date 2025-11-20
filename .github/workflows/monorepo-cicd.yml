@@ -86,7 +86,7 @@ jobs:
           OWNER_LC=$(echo "${{ env.IMAGE_OWNER }}" | tr '[:upper:]' '[:lower:]')
           IMAGE_NAME="${{ env.REGISTRY }}/$OWNER_LC/${{ matrix.service }}:latest"
           
-          ./mvnw spring-boot:build-image \
+          mvn spring-boot:build-image \
             -pl ${{ matrix.service }} \
             -am \
             -Dspring-boot.build-image.imageName=$IMAGE_NAME \
