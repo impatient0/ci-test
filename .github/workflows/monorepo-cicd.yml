@@ -81,16 +81,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Image
-        run: |
-          OWNER_LC=$(echo "${{ env.IMAGE_OWNER }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE_NAME="${{ env.REGISTRY }}/$OWNER_LC/${{ matrix.service }}:latest"
-          
-          mvn spring-boot:build-image \
-            -pl ${{ matrix.service }} \
-            -am \
-            -Dspring-boot.build-image.imageName=$IMAGE_NAME \
-            -Dspring-boot.build-image.publish=true
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.service }}:latest
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
