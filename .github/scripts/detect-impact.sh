@@ -27,13 +27,24 @@ if [ -z "$AFFECTED_MODULES" ]; then
 fi
 
 # 3. Ask Maven whats needs to be built
-IMPACTED_PATHS=$(mvn -q \
+echo "Asking Maven for the impact tree..."
+
+set +e
+IMPACTED_PATHS=$(mvn \
   -Dexec.executable=echo \
   -Dexec.args='${project.basedir}' \
   exec:exec \
   -pl "$AFFECTED_MODULES" \
   -amd \
   -am)
+MVN_EXIT_CODE=$?
+set -e
+
+# Check if Maven failed
+if [ $MVN_EXIT_CODE -ne 0 ]; then
+  echo "::error::Maven failed to calculate dependencies! Check your pom.xml and Java version."
+  exit 1
+fi
 
 DEPLOY_TARGETS=()
 
