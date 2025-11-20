@@ -1,0 +1,126 @@
+name: Monorepo Smart CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  # ------------------------------------------------------------------
+  # JOB 1: CALCULATE IMPACT
+  # ------------------------------------------------------------------
+  plan-deployment:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Run Detection Script
+        id: detect
+        run: |
+          chmod +x .github/scripts/detect-impact.sh
+          .github/scripts/detect-impact.sh
+
+  # ------------------------------------------------------------------
+  # JOB 2: BUILD & DEPLOY
+  # ------------------------------------------------------------------
+  build-and-deploy:
+    needs: plan-deployment
+    if: ${{ needs.plan-deployment.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.plan-deployment.outputs.matrix) }}
+
+    name: Deploy ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # 1. READ CONFIGURATION
+      - name: Read Service Config
+        id: config
+        run: |
+          CONFIG_FILE="${{ matrix.service }}/deploy.env"
+          if [ -f "$CONFIG_FILE" ]; then
+            # Load vars from file
+            source $CONFIG_FILE
+            echo "Found config for ${{ matrix.service }}. Port: $HOST_PORT"
+            echo "port=$HOST_PORT" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No deploy.env found for ${{ matrix.service }}!"
+            exit 1
+          fi
+
+      - name: Log in to Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Image
+        run: |
+          OWNER_LC=$(echo "${{ env.IMAGE_OWNER }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="${{ env.REGISTRY }}/$OWNER_LC/${{ matrix.service }}:latest"
+          
+          ./mvnw spring-boot:build-image \
+            -pl ${{ matrix.service }} \
+            -am \
+            -Dspring-boot.build-image.imageName=$IMAGE_NAME \
+            -Dspring-boot.build-image.publish=true
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: IMAGE_OWNER,REGISTRY
+          script: |
+            SERVICE_NAME="${{ matrix.service }}"
+            # We get the port from the previous step's output
+            HOST_PORT="${{ steps.config.outputs.port }}"
+            
+            OWNER_LC=$(echo "${IMAGE_OWNER}" | tr '[:upper:]' '[:lower:]')
+            IMAGE_NAME="${REGISTRY}/$OWNER_LC/$SERVICE_NAME:latest"
+            
+            # Login & Pull
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull $IMAGE_NAME
+            
+            # Restart Container
+            docker stop $SERVICE_NAME || true
+            docker rm $SERVICE_NAME || true
+            
+            echo "Starting $SERVICE_NAME on port $HOST_PORT"
+            
+            docker run -d \
+              --name $SERVICE_NAME \
+              -p $HOST_PORT:8080 \
+              --restart unless-stopped \
+              $IMAGE_NAME
+            
+            docker image prune -f
