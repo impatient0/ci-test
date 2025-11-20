@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # 1. Detect what files changed
 CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
@@ -31,16 +32,15 @@ IMPACTED_PATHS=$(mvn -q \
   -Dexec.args='${project.basedir}' \
   exec:exec \
   -pl "$AFFECTED_MODULES" \
-  -amd)
+  -amd \
+  -am)
 
 DEPLOY_TARGETS=()
 
 while IFS= read -r module_path; do
   # 4. Check for deploy.env
   if [[ -f "$module_path/deploy.env" ]]; then
-
       module_name=$(basename "$module_path")
-
       echo "Found deployable service: $module_name"
       DEPLOY_TARGETS+=("\"$module_name\"")
   else
