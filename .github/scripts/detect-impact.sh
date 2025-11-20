@@ -16,7 +16,6 @@ for file in $CHANGED_FILES; do
   done
 done
 
-# Remove trailing comma
 AFFECTED_MODULES=${AFFECTED_MODULES%,}
 
 if [ -z "$AFFECTED_MODULES" ]; then
@@ -28,44 +27,44 @@ fi
 echo "Affected modules: $AFFECTED_MODULES"
 
 # 3. Ask Maven whats needs to be built
-echo "Debugging: Running Maven to see errors..."
+echo "Calculating impact tree..."
 
-mvn \
+set +e
+IMPACTED_ARTIFACTS=$(mvn -q \
   -Dexec.executable=echo \
-  -Dexec.args='${project.basedir}' \
-  exec:exec \
-  -pl "$AFFECTED_MODULES" \
-  -amd \
-  -am > /dev/null
-
-IMPACTED_PATHS=$(mvn \
-  -Dexec.executable=echo \
-  -Dexec.args='${project.basedir}' \
+  -Dexec.args='${project.artifactId}' \
   exec:exec \
   -pl "$AFFECTED_MODULES" \
   -amd \
   -am)
+MVN_EXIT_CODE=$?
+set -e
 
 # Check if Maven failed
 if [ $MVN_EXIT_CODE -ne 0 ]; then
-  echo "::error::Maven failed to calculate dependencies! Check your pom.xml and Java version."
+  echo "::error::Maven failed to calculate dependencies!"
+  mvn -Dexec.executable=echo -Dexec.args='${project.artifactId}' exec:exec -pl "$AFFECTED_MODULES" -amd -am
   exit 1
 fi
 
 DEPLOY_TARGETS=()
 
-while IFS= read -r module_path; do
-  # 4. Check for deploy.env
-  if [[ -f "$module_path/deploy.env" ]]; then
-      module_name=$(basename "$module_path")
-      echo "Found deployable service: $module_name"
-      DEPLOY_TARGETS+=("\"$module_name\"")
-  else
-      echo "Skipping $module_path (No deploy.env found)"
-  fi
-done <<< "$IMPACTED_PATHS"
+# 4. Process the list
+while IFS= read -r artifact_id; do
+  if [ -z "$artifact_id" ]; then continue; fi
 
-# 5. Output JSON for GitHub Actions Matrix
+  config_path="$artifact_id/deploy.env"
+
+  # Check for deploy.env
+  if [[ -f "$config_path" ]]; then
+      echo "Found deployable service: $artifact_id"
+      DEPLOY_TARGETS+=("\"$artifact_id\"")
+  else
+      echo "Skipping $artifact_id (No deploy.env found at $config_path)"
+  fi
+done <<< "$IMPACTED_ARTIFACTS"
+
+# 5. Output JSON
 JSON_ARRAY="[$(IFS=,; echo "${DEPLOY_TARGETS[*]}")]"
 echo "Final Matrix: $JSON_ARRAY"
 echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
