@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # 1. Detect what files changed
 CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
@@ -26,10 +25,19 @@ if [ -z "$AFFECTED_MODULES" ]; then
   exit 0
 fi
 
-# 3. Ask Maven whats needs to be built
-echo "Asking Maven for the impact tree..."
+echo "Affected modules: $AFFECTED_MODULES"
 
-set +e
+# 3. Ask Maven whats needs to be built
+echo "Debugging: Running Maven to see errors..."
+
+mvn \
+  -Dexec.executable=echo \
+  -Dexec.args='${project.basedir}' \
+  exec:exec \
+  -pl "$AFFECTED_MODULES" \
+  -amd \
+  -am > /dev/null
+
 IMPACTED_PATHS=$(mvn \
   -Dexec.executable=echo \
   -Dexec.args='${project.basedir}' \
@@ -37,8 +45,6 @@ IMPACTED_PATHS=$(mvn \
   -pl "$AFFECTED_MODULES" \
   -amd \
   -am)
-MVN_EXIT_CODE=$?
-set -e
 
 # Check if Maven failed
 if [ $MVN_EXIT_CODE -ne 0 ]; then
