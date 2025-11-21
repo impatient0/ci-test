@@ -13,6 +13,6 @@ public class Controller {
 
     @GetMapping("/")
     public String hello() {
-        return "Service TWO (updated): " + messageGenerator.getMessage();
+        return "Service TWO: " + messageGenerator.getMessage();
     }
 }

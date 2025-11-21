@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.detect.outputs.matrix }}
+    name: Plan Deployment
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,7 +99,6 @@ jobs:
           envs: IMAGE_OWNER,REGISTRY
           script: |
             SERVICE_NAME="${{ matrix.service }}"
-            # We get the port from the previous step's output
             HOST_PORT="${{ steps.config.outputs.port }}"
             
             OWNER_LC=$(echo "${IMAGE_OWNER}" | tr '[:upper:]' '[:lower:]')
