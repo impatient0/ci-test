@@ -53,14 +53,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
-
-      # 1. READ CONFIGURATION
       - name: Read Service Config
         id: config
         run: |
@@ -74,6 +66,9 @@ jobs:
             echo "::error::No deploy.env found for ${{ matrix.service }}!"
             exit 1
           fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Container registry
         uses: docker/login-action@v3
@@ -89,6 +84,8 @@ jobs:
           file: ./${{ matrix.service }}/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.service }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
